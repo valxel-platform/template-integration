@@ -119,7 +119,10 @@ class Outbound(threading.Thread):
                 return
             except (Unavailable, CircuitOpen) as exc:
                 log.warning(
-                    "%s: vendor unavailable (%s); retrying event %s", dataset, type(exc).__name__, event_id
+                    "integration.vendor_unavailable dataset=%s reason=%s; retrying event %s",
+                    dataset,
+                    type(exc).__name__,
+                    event_id,
                 )
                 self._retry(msg)
                 return

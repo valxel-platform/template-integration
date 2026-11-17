@@ -111,11 +111,12 @@ def test_contract_breaks_and_vendor_refusals_are_parked(store, contracts, audito
     assert sink.events[0]["data"]["outcome"] == "failure"
 
 
-def test_while_the_vendor_is_down_the_same_event_is_retried(store, contracts, auditor):
+def test_while_the_vendor_is_down_the_same_event_is_retried(store, contracts, auditor, caplog):
     vendor = Recorder(fail=Unavailable("down"))
     out, consumer, _ = outbound(store, contracts, auditor, vendor, Msg("emr.lab-order.v1", order(), 5))
     out.step()
     assert consumer.committed == [] and consumer.seeks == [5]
+    assert "integration.vendor_unavailable dataset=lab-order" in caplog.text
     vendor.fail = None
     out.step()
     assert consumer.committed == [5]

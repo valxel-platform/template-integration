@@ -143,6 +143,11 @@ class Receiver:
             return Answer(503, {"error": "unavailable"})
         if not (stamp_ok and sig_ok):
             events.record("integration.webhook_rejected", webhook=hook.name)
+            log.warning(
+                "integration.signature_rejected webhook=%s check=%s",
+                hook.name,
+                "signature" if stamp_ok else "timestamp",
+            )
             try:
                 self._audit(hook, "", "denied", "signature" if stamp_ok else "timestamp", {})
             except AuditUnavailable:
@@ -166,12 +171,7 @@ class Receiver:
                     )
                 except AuditUnavailable:
                     log.error("webhook %s: audit unavailable for refused delivery %s", hook.name, delivery)
-            log.error(
-                "webhook %s: delivery %s maps to an event that breaks its contract: %s",
-                hook.name,
-                delivery,
-                exc,
-            )
+            log.error("integration.delivery_refused webhook=%s delivery=%s: %s", hook.name, delivery, exc)
             return Answer(422, {"error": "the data doesn't match the agreed contract", "field": exc.field})
         except (ValueError, KeyError, TypeError) as exc:
             log.error(

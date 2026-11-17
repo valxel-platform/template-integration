@@ -72,12 +72,13 @@ def test_a_signed_delivery_is_accepted_once_and_its_event_goes_to_the_outbox(rec
         {"prefix": "sha1="},
     ],
 )
-def test_bad_signatures_and_replays_get_a_bare_401(receiver, cfg, store, sink, change):
+def test_bad_signatures_and_replays_get_a_bare_401(receiver, cfg, store, sink, change, caplog):
     raw = body()
     a = receiver.receive(cfg.webhooks[0], headers(raw, **change), raw)
     assert (a.status, a.body) == (401, {"error": "unauthorized"})
     assert store.claim() == []
     assert sink.events[0]["data"]["outcome"] == "denied"
+    assert "integration.signature_rejected webhook=lab-results" in caplog.text  # the alert rule's marker
 
 
 def test_a_tampered_body_or_missing_headers_are_refused(receiver, cfg):
@@ -102,13 +103,16 @@ def test_the_previous_secret_still_works_during_a_rotation(receiver, cfg, secret
     )
 
 
-def test_data_that_breaks_the_contract_is_kept_as_failed_and_not_published(receiver, cfg, store, sink):
+def test_data_that_breaks_the_contract_is_kept_as_failed_and_not_published(
+    receiver, cfg, store, sink, caplog
+):
     raw = body(order_ref="x" * 65)
     a = receiver.receive(cfg.webhooks[0], headers(raw), raw)
     assert a.status == 422 and a.body["field"] == "order_id"
     assert store.inbox[("lab-results", "d-1")]["status"] == "failed"
     assert "x" * 65 not in store.inbox[("lab-results", "d-1")]["error"]
     assert store.claim() == []
+    assert "integration.delivery_refused webhook=lab-results" in caplog.text
     assert sink.events[-1]["data"]["outcome"] == "failure"
     assert (
         receiver.receive(cfg.webhooks[0], headers(raw), raw).status == 422
