@@ -1,0 +1,33 @@
+# What G4 reviews with the design: who's on the other side, how each side proves who it is, and
+# the limits. Names of secrets only (mounted under /var/run/secrets/valxel), never their values.
+# example-labs is synthetic: the coder replaces it with the vendor the HLD names.
+name: template-integration
+vendor: example-labs
+data_class: phi
+baa: true
+inbound:
+  webhooks:
+    - name: lab-results
+      path: /webhooks/lab-results
+      signature:
+        type: hmac-sha256
+        header: X-Signature
+        secret: lab-results-signing
+        timestamp_header: X-Timestamp
+        tolerance_s: 300
+      delivery_id_header: X-Delivery-Id
+      max_body_kb: 256
+      rate_per_minute: 600
+outbound:
+  base_url: https://api.example-labs.test
+  allowed_hosts: [api.example-labs.test, auth.example-labs.test]
+  auth:
+    type: oauth2-client-credentials
+    token_url: https://auth.example-labs.test/oauth/token
+    client_id: lab-client-id
+    client_secret: lab-client-secret
+    scope: orders.write
+  timeout_s: 10
+  retries: 5
+  rate_per_s: 10
+  circuit: { failures: 5, open_s: 60 }
