@@ -1,0 +1,4 @@
+# Written by the SDLC tool from the product's dataset catalog: the contracts this component
+# publishes (lab-result) and reads (lab-order). Don't edit by hand.
+lab-result: { topic: emr.lab-result.v1, version: 1.0.0 }
+lab-order: { topic: emr.lab-order.v1, version: 1.0.0 }

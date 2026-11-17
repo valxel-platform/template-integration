@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "lab-result",
+  "type": "object",
+  "required": ["order_id", "status", "reported_at"],
+  "properties": {
+    "order_id": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "status": { "enum": ["preliminary", "final", "amended", "cancelled"] },
+    "result_code": { "type": "string", "maxLength": 32 },
+    "reported_at": { "type": "string", "format": "date-time" }
+  }
+}

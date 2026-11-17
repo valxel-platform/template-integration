@@ -1,0 +1,5 @@
+# Files that carry this template's name. When the SDLC tool creates a repo from the template, it
+# replaces the template's name with the new component's in each: integration.yaml's name, and
+# component.py, which names it in error reports, traces, audit records and its Kafka group.
+integration.yaml
+src/integration/component.py
