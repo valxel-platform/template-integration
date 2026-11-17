@@ -1,6 +1,7 @@
 # Where this template implements each capability its role needs (agentic-sdlc config/template-contract.yaml).
 # valxel repos check reads this file; keep a path here when you move the code.
 audit: src/integration/audit.py
+dataset-counts: src/integration/contracts.py
 dependency-review: .github/workflows/ci.yml
 dependency-updates: .github/dependabot.yml
 error-reports: src/integration/errors.py
