@@ -3,12 +3,13 @@
 # the connector refuses it and audits the refusal.
 image: "ci"  # the tag CI builds
 command: "uv run integration"  # conformance.py local: the app as a process
-secrets:
+# Synthetic test values, read from a folder as the deployed app reads its mounted secrets.
+files:
   lab-results-signing: conformance-signing-secret
   lab-client-id: conformance-client
   lab-client-secret: conformance-client-secret
 env:
-  INTEGRATION_SECRETS_DIR: "{secrets}"
+  INTEGRATION_SECRETS_DIR: "{files}"
   INTEGRATION_FLAGS_URL: "{ofrep}"
   INTEGRATION_PRODUCT: conformance
   INTEGRATION_ENVIRONMENT: ci
