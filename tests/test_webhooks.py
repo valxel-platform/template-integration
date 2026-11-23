@@ -161,3 +161,24 @@ def test_signature_comparison():
     assert signature_ok(["b", "a"], "1", raw, good.upper())
     assert not signature_ok(["b"], "1", raw, good)
     assert time.time() > 0
+
+
+def test_the_example_feature_is_behind_its_flag(receiver, cfg):
+    """The pattern every feature follows: its new behaviour reads its flag, and off is today's."""
+    from openfeature.provider.in_memory_provider import InMemoryFlag, InMemoryProvider
+
+    from integration import flags
+    from integration.webhooks import example_flag
+
+    assert example_flag("emr") == "emr.example.receipt-names-delivery"
+    assert example_flag("") == "example.example.receipt-names-delivery"
+    hook, raw = cfg.webhooks[0], body()
+    assert receiver.receive(hook, headers(raw, delivery="d-off"), raw).body == {"status": "accepted"}
+    on = InMemoryFlag("on", {"on": True, "off": False})
+    flags.use_provider(InMemoryProvider({example_flag("emr"): on}))
+    try:
+        raw = body(order_ref="ORD-1002")
+        a = receiver.receive(hook, headers(raw, delivery="d-on"), raw)
+        assert a.body == {"status": "accepted", "delivery": "d-on"}
+    finally:
+        flags.use_provider(InMemoryProvider({}))
