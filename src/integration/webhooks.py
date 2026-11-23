@@ -32,7 +32,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from . import events
+from . import events, flags
 from .audit import Actor, Auditor, AuditUnavailable, Outcome
 from .config import Config, Webhook
 from .contracts import ContractError, Contracts, count
@@ -51,6 +51,13 @@ class Answer:
 
 
 UNAUTHORIZED = Answer(401, {"error": "unauthorized"})
+
+
+def example_flag(product: str) -> str:
+    """The example feature's flag. It shows the pattern every feature follows: the tool gives the
+    feature a flag in the product's Flipt (on in dev and staging, off in production until it's
+    released) and the new behaviour reads it. Replace it with your first feature's own."""
+    return f"{product or 'example'}.example.receipt-names-delivery"
 
 
 def sign(secret: str, timestamp: str, body: bytes) -> str:
@@ -190,6 +197,10 @@ class Receiver:
         if not self.store.accept(hook.name, delivery, digest, outgoing):
             return Answer(202, {"status": "already received"})
         events.record("integration.webhook_accepted", webhook=hook.name)
+        # The template's example feature, behind its flag: off, the receipt is today's. On, it
+        # names the delivery it accepted, so the vendor can match it to what it sent.
+        if flags.enabled(example_flag(self.source.split("/", 1)[0]), user=self.cfg.vendor):
+            return Answer(202, {"status": "accepted", "delivery": delivery})
         return Answer(202, {"status": "accepted"})
 
     def _event(self, dataset: str, key: str, data: dict[str, Any], delivery: str) -> Outgoing:

@@ -1,6 +1,7 @@
 # The template conformance suite (.github/scripts/conformance.py, managed by the platform): the built
-# image does what every connector repo must. The vendor's webhook is called with a wrong signature:
-# the connector refuses it and audits the refusal.
+# image does what every connector repo must. The vendor's webhook is called with a wrong signature
+# (refused, and the refusal audited), then signed as the vendor signs it (accepted, audited, and the
+# example feature's flag read: webhooks.example_flag).
 image: "ci"  # the tag CI builds
 command: "uv run integration"  # conformance.py local: the app as a process
 # Synthetic test values, read from a folder as the deployed app reads its mounted secrets.
@@ -20,5 +21,10 @@ steps:
     headers: {X-Signature: "0000", X-Timestamp: "1700000000", X-Delivery-Id: conformance-1}
     json: {result: "x"}
     expect: [401]
-# No flag yet: the example code reads none (a feature adds its own, flags.enabled).
-checks: [audit, tracing, events]
+  - method: POST
+    path: /webhooks/lab-results
+    headers: {X-Delivery-Id: conformance-2}
+    json: {order_ref: ORD-1001, status: final, loinc: 2345-7, reported_at: "2026-11-17T10:00:00Z"}
+    sign: {secret: lab-results-signing, header: X-Signature, timestamp_header: X-Timestamp, prefix: "sha256="}
+    expect: [202]
+checks: [audit, tracing, events, flags]
