@@ -8,6 +8,7 @@ contracts on Kafka.
 ```
 vendor ──signed webhook──▶ /webhooks/<name> ─▶ inbox + outbox ─▶ relay ─▶ Kafka (product events)
 vendor ◀──https, allowlisted── vendor client ◀── outbound consumer ◀── Kafka (product events)
+source ◀──poll on a schedule── pull sync ─▶ @pull ─▶ outbox + cursor (one transaction) ─▶ relay ─▶ Kafka
 ```
 
 ## What you write
@@ -20,6 +21,21 @@ vendor ◀──https, allowlisted── vendor client ◀── outbound consum
    `Emit(dataset, key, data)`; `@outbound("<dataset>")` sends one product event through `vendor`.
    Raise `Permanent` for an event the vendor will never accept. The example (a synthetic lab
    vendor) shows the shape.
+3. **Pull sources** (optional), when the source can't call you: a `pull:` list in
+   `integration.yaml` (the shape is in `config.py`) and a `@pull("<source>")` handler per source
+   that turns one record into `Emit(...)`, or `Delete(dataset, key)` for a record the source says
+   is gone. Two adapters: `http-cursor` (a paged API, read through `outbound`, so the same hosts,
+   auth, limits and circuit breaker apply) and `object-store` (files in an S3 bucket, read with
+   the pod's workload identity; add `boto3` to the dependencies). A new adapter is the platform
+   team's to approve: the SDLC tool refuses any other name.
+
+```python
+@pull("test-catalog")
+def catalog_item(record: dict) -> list[Emit | Delete]:
+    if record.get("retired"):
+        return [Delete("lab-test", key=record["code"])]
+    return [Emit("lab-test", key=record["code"], data={"code": record["code"], "name": record["name"]})]
+```
 
 The SDLC tool writes `contracts/` from the product's dataset catalog. Events you emit are checked
 against their contract before they're published; events you read are checked before they're sent.
@@ -34,7 +50,8 @@ against their contract before they're published; events you read are checked bef
 | Vendor trouble | retries with jittered backoff and `Retry-After`, token bucket, circuit breaker; the consumer pauses and retries the same event while the vendor is down |
 | Bad data | contract checks both ways; refused deliveries kept as failed (422); unsendable events parked on `<topic>.dlt` naming the field, never the value |
 | Secrets | mounted files under `/var/run/secrets/valxel`, re-read on change |
-| Audit | `integration.received` and `integration.sent`, ids only; required for PHI and payments |
+| Pull sources | each page's events and the cursor after it saved in one transaction (a crash re-reads a page, never skips one); `backfill_from` on the first run, then incremental; one run per source across replicas; deletions as `<dataset>.deleted` carrying only the key (by tombstone, or a full listing that never deletes on a partial one); `permissions_field` empty, so visible to nobody, when the handler gives no principals; a completeness record per run (seen, published, deleted, parked, cursor from and to) the SDLC tool reconciles; `integration_pull_failing{source}` and a "needs attention" log after 3 failed runs in a row |
+| Audit | `integration.received` (per webhook delivery, or per pulled page with the record keys) and `integration.sent`, ids only; required for PHI and payments |
 | Observability | OpenTelemetry traces (the webhook's trace continues through Kafka to the vendor call), JSON logs, Sentry with scrubbing, `/metrics` with dataset counts, product events and flag cohorts |
 
 ## Running

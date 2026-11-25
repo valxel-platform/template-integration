@@ -1,11 +1,12 @@
 """The connector: webhooks in, vendor calls out.
 
 Routes: /webhooks/<name> (the only ones the platform exposes outside the cluster), /healthz,
-/readyz and /metrics (in-cluster only). Background threads: the outbox relay and, when any
-@outbound handler exists, the outbound consumer.
+/readyz and /metrics (in-cluster only). Background threads: the outbox relay, the outbound
+consumer when any @outbound handler exists, and the pull sync (pull.py) when integration.yaml
+names pull sources.
 
 Start-up refuses to run when integration.yaml is invalid, a secret it names isn't mounted, a
-webhook has no handler, or a PHI/payments product's Kafka connections aren't TLS.
+webhook or pull source has no handler, or a PHI/payments product's Kafka connections aren't TLS.
 """
 
 from __future__ import annotations
@@ -48,7 +49,9 @@ class Runtime:
 
 def startup_problems(cfg: Config, secrets: Secrets, contracts: Contracts) -> list[str]:
     problems = check_handlers(
-        [w.name for w in cfg.webhooks], [c.dataset for c in contracts.by_topic.values()]
+        [w.name for w in cfg.webhooks],
+        [c.dataset for c in contracts.by_topic.values()],
+        [p.name for p in cfg.pulls],
     )
     for name in cfg.secrets:
         try:
@@ -106,8 +109,24 @@ def build(
 
 
 def start_workers(rt: Runtime) -> None:
-    """The relay and the outbound consumer (deployed: Kafka configured)."""
+    """The pull sync (it writes to the outbox), then the relay and the outbound consumer
+    (deployed: Kafka configured)."""
     s = rt.settings
+    if rt.cfg.pulls:
+        from .pull import Sync
+        from .vendor import Vendor
+
+        needs_vendor = any(p.adapter == "http-cursor" for p in rt.cfg.pulls)
+        sync = Sync(
+            rt.cfg,
+            rt.store,
+            rt.contracts,
+            rt.auditor,
+            source=f"{s.product}/{COMPONENT}",
+            vendor=Vendor(rt.cfg.outbound, rt.secrets) if needs_vendor and rt.cfg.outbound else None,
+        )
+        sync.start()
+        rt.threads.append(sync)
     if not s.kafka_bootstrap:
         log.warning("no Kafka configured: events stay in the outbox")
         return
