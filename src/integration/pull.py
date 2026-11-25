@@ -27,13 +27,20 @@ What makes it safe to stop at any moment:
   on the integration_pull_failing gauge; the next run resumes from the saved cursor (catch-up).
 
 Every run leaves a completeness record (Store.pull_run_end: records seen, published, deleted and
-parked, the cursor it started and ended at), which the SDLC tool reconciles against the dataset
-counts in the valxel.datasets summary line. Each page is audited as integration.received with
-the record keys and counts only.
+parked, the cursor it started and ended at), and is counted in a summary line the worker logs once
+a minute, counts only:
+
+    valxel.pulls {"test-catalog":{"failed":0,"parked":1,"published":40,"runs":2,"seen":41,"succeeded":2,...}}
+
+In staging the SDLC tool sums these per source (valxel_sdlc.reconcile): a parked record, or a
+source whose every run failed, holds the release. What the runs published is also in the
+valxel.datasets line, which the tool reconciles with each consumer. Each page is audited as
+integration.received with the record keys and counts only.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import time
@@ -58,6 +65,34 @@ FAILING = Gauge(
     "Runs in a row a pull source has failed (0: healthy)",
     ["source"],
 )
+
+
+SUMMARY = "valxel.pulls"
+_runs: dict[str, dict[str, int]] = {}
+_runs_lock = threading.Lock()
+
+
+def _tally(run: Run, outcome: str) -> None:
+    with _runs_lock:
+        row = _runs.setdefault(run.source, {})
+        for key, n in (
+            ("runs", 1),
+            (outcome, 1),
+            ("seen", run.seen),
+            ("published", run.published),
+            ("deleted", run.deleted),
+            ("parked", run.parked),
+        ):
+            row[key] = row.get(key, 0) + n
+
+
+def summary_line() -> str | None:
+    """valxel.pulls {"<source>":{"runs":n,"succeeded":n,"failed":n,"seen":n,...}} for the runs that
+    ended since the last line, or None."""
+    with _runs_lock:
+        taken = {src: dict(sorted(row.items())) for src, row in sorted(_runs.items()) if row}
+        _runs.clear()
+    return f"{SUMMARY} {json.dumps(taken, separators=(',', ':'))}" if taken else None
 
 
 class PullError(RuntimeError):
@@ -166,6 +201,7 @@ class Sync(threading.Thread):
             except Exception as exc:  # noqa: BLE001 - the run ends; the next resumes from the saved cursor
                 outcome, error = "failed", f"{type(exc).__name__}: {exc}"[:500]
             self.store.pull_run_end(run, outcome, error)
+            _tally(run, outcome)
             self._health(p, health, outcome, error)
             log.info(
                 "pull %s run %s %s: seen %d, published %d, deleted %d, parked %d",

@@ -623,3 +623,29 @@ def test_the_connector_starts_the_sync_with_the_outbound_client(
     finally:
         s.stop.set()
         s.join(5)
+
+
+def test_runs_are_counted_in_the_summary_line(registered, store, pull_contracts, auditor):
+    from integration import pull as pullmod
+
+    pullmod.summary_line()  # drop what earlier tests counted
+    cfg = config(HTTP)
+    api = API(pages([t("A1"), {"code": "A2", "boom": True}]))
+    s = sync(cfg, store, pull_contracts, auditor, vendor=api)
+    s.run_once(cfg.pulls[0])
+    api.pages = {"": {"results": []}}
+    s.run_once(cfg.pulls[0])
+    line = pullmod.summary_line()
+    assert line is not None and line.startswith("valxel.pulls ")
+    assert json.loads(line.split(" ", 1)[1]) == {
+        "test-catalog": {
+            "deleted": 0,
+            "failed": 1,
+            "parked": 1,
+            "published": 1,
+            "runs": 2,
+            "seen": 2,
+            "succeeded": 1,
+        }
+    }
+    assert pullmod.summary_line() is None  # counted once
