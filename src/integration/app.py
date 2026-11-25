@@ -163,10 +163,12 @@ def start_workers(rt: Runtime) -> None:
 
 
 def _report_datasets(stop: threading.Event) -> None:
+    from . import pull
+
     while not stop.wait(60):
-        line = summary_line()
-        if line:
-            log.info(line)
+        for line in (summary_line(), pull.summary_line()):
+            if line:
+                log.info(line)
 
 
 async def _read_capped(request: Request, limit: int) -> bytes | None:

@@ -221,7 +221,13 @@ def test_a_wrong_pull_source_is_refused(change, message):
 
 def test_object_store_sources_name_a_supported_store_and_a_bucket():
     assert "store.kind must be one of s3" in refused({**FILES, "store": {"kind": "ftp", "bucket": "b"}})
-    assert "store.bucket names the bucket" in refused({**FILES, "store": {"kind": "s3"}})
+    assert "exactly one of them" in refused({**FILES, "store": {"kind": "s3"}})
+    assert "exactly one of them" in refused(
+        {**FILES, "store": {"kind": "s3", "bucket": "b", "resource": "r"}}
+    )
+    assert "the resource's name in the design" in refused(
+        {**FILES, "store": {"kind": "s3", "resource": "Lab Drop"}}
+    )
 
 
 def test_http_sources_need_outbound_and_names_are_unique_and_shape_is_checked():
@@ -623,3 +629,48 @@ def test_the_connector_starts_the_sync_with_the_outbound_client(
     finally:
         s.stop.set()
         s.join(5)
+
+
+def test_runs_are_counted_in_the_summary_line(registered, store, pull_contracts, auditor):
+    from integration import pull as pullmod
+
+    pullmod.summary_line()  # drop what earlier tests counted
+    cfg = config(HTTP)
+    api = API(pages([t("A1"), {"code": "A2", "boom": True}]))
+    s = sync(cfg, store, pull_contracts, auditor, vendor=api)
+    s.run_once(cfg.pulls[0])
+    api.pages = {"": {"results": []}}
+    s.run_once(cfg.pulls[0])
+    line = pullmod.summary_line()
+    assert line is not None and line.startswith("valxel.pulls ")
+    assert json.loads(line.split(" ", 1)[1]) == {
+        "test-catalog": {
+            "deleted": 0,
+            "failed": 1,
+            "parked": 1,
+            "published": 1,
+            "runs": 2,
+            "seen": 2,
+            "succeeded": 1,
+        }
+    }
+    assert pullmod.summary_line() is None  # counted once
+
+
+def test_a_bound_bucket_is_read_by_the_name_its_binding_sets(registered, store, pull_contracts, auditor):
+    from integration.config import resource_env
+
+    assert resource_env("lab-drop", "bucket") == "LAB_DROP_BUCKET"
+    src = {**FILES, "store": {"kind": "s3", "resource": "lab-drop", "prefix": "protocols/"}}
+    cfg = config(src)
+    assert (cfg.pulls[0].resource, cfg.pulls[0].bucket) == ("lab-drop", "")
+    bucket = Bucket({"protocols/a.txt": b"a"})
+    s = sync(cfg, store, pull_contracts, auditor, objects={"s3": bucket}, env={"LAB_DROP_BUCKET": "drop"})
+    run = s.run_once(cfg.pulls[0])
+    assert run is not None and run.published == 1  # Bucket.list checks it was asked for "drop"
+    unbound = sync(cfg, store, pull_contracts, auditor, objects={"s3": bucket}, env={})
+    run = unbound.run_once(cfg.pulls[0])
+    assert run is not None
+    assert store.runs[run.id - 1]["error"] == (
+        "ValueError: LAB_DROP_BUCKET isn't set: bind lab-drop in workload.yaml (dependencies.resources)"
+    )

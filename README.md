@@ -25,9 +25,12 @@ source ◀──poll on a schedule── pull sync ─▶ @pull ─▶ outbox + 
    `integration.yaml` (the shape is in `config.py`) and a `@pull("<source>")` handler per source
    that turns one record into `Emit(...)`, or `Delete(dataset, key)` for a record the source says
    is gone. Two adapters: `http-cursor` (a paged API, read through `outbound`, so the same hosts,
-   auth, limits and circuit breaker apply) and `object-store` (files in an S3 bucket, read with
-   the pod's workload identity; add `boto3` to the dependencies). A new adapter is the platform
-   team's to approve: the SDLC tool refuses any other name.
+   auth, limits and circuit breaker apply) and `object-store` (files in an S3 bucket bound to the
+   connector: `store: {kind: s3, resource: <name>}`, an object-bucket in the design's Resources
+   that the connector reads. Its name arrives as `<RESOURCE>_BUCKET` through workload.yaml's
+   dependencies, its identity may read that bucket only, and the deploy opens egress to its
+   endpoint only. Add `boto3` to the dependencies). A new adapter is the platform team's to
+   approve: the SDLC tool refuses any other name.
 
 ```python
 @pull("test-catalog")
