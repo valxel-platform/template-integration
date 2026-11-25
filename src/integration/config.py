@@ -36,9 +36,14 @@ section. It holds names of secrets, never their values.
       - name: protocols
         adapter: object-store      # files in a bucket: each new or changed object -> @pull
         every_minutes: 15
-        store: { kind: s3, bucket: example-labs-drop, prefix: protocols/ }
+        store: { kind: s3, resource: lab-drop, prefix: protocols/ }   # the bucket bound to this connector
         deletions: full-listing    # an object gone since the last full listing -> Delete
         permissions_field: allow   # the dataset field holding who may see a record; empty: nobody
+
+`store.resource` names the object-bucket the design binds to this connector (Resources, `reads:
+<connector>`): its name comes from the binding's environment variable (<RESOURCE>_BUCKET, through
+workload.yaml's dependencies), and the connector's identity may read it and nothing else. `bucket`
+names one directly, for local runs only; the SDLC tool refuses it on a product's branch.
 
 `deletions`: tombstone (the handler says so), full-listing (each run lists everything and compares;
 object-store only) or none. `permissions_field`: when set, a record the handler gives no
@@ -48,6 +53,7 @@ principals is published visible to nobody, never to everyone.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -116,7 +122,26 @@ class Pull:
     # object-store
     store_kind: str = ""
     bucket: str = ""
+    resource: str = ""
     prefix: str = ""
+
+    def bucket_name(self, env: Mapping[str, str]) -> str:
+        """The bucket to read: named, or from the bound resource's environment variable."""
+        if self.bucket:
+            return self.bucket
+        var = resource_env(self.resource, "bucket")
+        name = env.get(var, "")
+        if not name:
+            raise ValueError(
+                f"{var} isn't set: bind {self.resource} in workload.yaml (dependencies.resources)"
+            )
+        return name
+
+
+def resource_env(resource: str, output: str) -> str:
+    """A bound resource's output as an environment variable, as the SDLC tool binds it
+    (valxel_sdlc.resources.env_name): lab-drop's bucket -> LAB_DROP_BUCKET."""
+    return re.sub(r"[^A-Z0-9]+", "_", f"{resource}_{output}".upper()).strip("_")
 
 
 @dataclass(frozen=True)
@@ -308,8 +333,13 @@ def _pulls(raw: Any, out: Outbound | None, problems: list[str]) -> list[Pull]:
         if adapter == "object-store":
             if str(store.get("kind") or "") not in STORES:
                 problems.append(f"{where}: store.kind must be one of {', '.join(STORES)}")
-            if not store.get("bucket"):
-                problems.append(f"{where}: store.bucket names the bucket (or container) to read")
+            if bool(store.get("bucket")) == bool(store.get("resource")):
+                problems.append(
+                    f"{where}: store.resource names the bucket bound to this connector (or, for local "
+                    "runs only, store.bucket names one): exactly one of them"
+                )
+            elif store.get("resource") and not _NAME.match(str(store["resource"])):
+                problems.append(f"{where}: store.resource is the resource's name in the design")
         pulls.append(
             Pull(
                 name=name,
@@ -328,6 +358,7 @@ def _pulls(raw: Any, out: Outbound | None, problems: list[str]) -> list[Pull]:
                 params={str(k): str(v) for k, v in dict(req.get("params") or {}).items()},
                 store_kind=str(store.get("kind") or ""),
                 bucket=str(store.get("bucket") or ""),
+                resource=str(store.get("resource") or ""),
                 prefix=str(store.get("prefix") or ""),
             )
         )

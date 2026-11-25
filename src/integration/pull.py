@@ -8,9 +8,10 @@ http-cursor   a paged HTTP API, read through the `outbound` client, so the same 
               next-cursor field. When a page has no next cursor the source is caught up: with
               `since_param` the next run asks for records changed since this run began; without
               it the next run re-reads from the last cursor.
-object-store  files in a bucket (S3 for now). Each run lists the prefix; an object whose etag is
-              unchanged isn't read again. With `deletions: full-listing`, an object no longer
-              listed has the events it produced published as deleted.
+object-store  files in the bucket bound to the connector (store.resource; S3 for now), read with
+              its workload identity, which may read that bucket only. Each run lists the prefix;
+              an object whose etag is unchanged isn't read again. With `deletions: full-listing`,
+              an object no longer listed has the events it produced published as deleted.
 
 What makes it safe to stop at any moment:
 
@@ -42,10 +43,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -158,6 +160,7 @@ class Sync(threading.Thread):
     objects: dict[str, Objects] = field(default_factory=dict)
     clock: Callable[[], float] = time.time
     tick_s: float = 30.0
+    env: Mapping[str, str] = field(default_factory=lambda: os.environ)
 
     def __post_init__(self) -> None:
         threading.Thread.__init__(self, name="pull", daemon=True)
@@ -277,6 +280,7 @@ class Sync(threading.Thread):
     def _objects(self, p: Pull, handler: Any, run: Run) -> None:
         client = self.objects.get(p.store_kind) or objects_for(p.store_kind)
         self.objects[p.store_kind] = client
+        bucket = p.bucket_name(self.env)
         known = self.store.pull_known(p.name)
         batch: list[Object] = []
         listed = 0
@@ -291,7 +295,7 @@ class Sync(threading.Thread):
                 if info is not None and info.get("etag") == o.etag:
                     seen[o.key] = info  # unchanged: still listed, not read again
                     continue
-                records.append({"key": o.key, "etag": o.etag, "content": client.read(p.bucket, o.key)})
+                records.append({"key": o.key, "etag": o.etag, "content": client.read(bucket, o.key)})
             for rec in records:
                 outs, k = self._map(p, handler, [rec], run)
                 events += outs
@@ -308,7 +312,7 @@ class Sync(threading.Thread):
             run.cursor_to = _describe(state)
             batch.clear()
 
-        for o in client.list(p.bucket, p.prefix):
+        for o in client.list(bucket, p.prefix):
             if self.stop.is_set():
                 return  # a partial listing never deletes anything
             batch.append(o)
