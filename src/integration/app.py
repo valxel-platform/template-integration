@@ -20,7 +20,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, generate_latest
 
-from . import cohorts, errors, events, flags, telemetry
+from . import cohorts, errors, events, flags, management, telemetry
 from . import mapping as _mapping  # noqa: F401 - registers the handlers
 from .audit import Auditor, make_sink, require_encryption
 from .component import COMPONENT
@@ -222,10 +222,6 @@ def create_app(
             return JSONResponse({"status": "not ready", "stopped": dead}, status_code=503)
         return JSONResponse({"status": "ready"})
 
-    @app.get("/metrics", include_in_schema=False)
-    def metrics() -> Response:
-        return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
-
     app.add_middleware(cohorts.CohortMiddleware)
     app.add_middleware(errors.TraceResponseMiddleware)
     app.state.runtime = rt
@@ -238,9 +234,18 @@ def create_app(
     return app
 
 
+def metrics_body() -> tuple[bytes, str]:
+    """What the management port serves (management.py): every metric, the product events counter
+    (valxel_events_total) among them."""
+    return generate_latest(REGISTRY), CONTENT_TYPE_LATEST
+
+
 def main() -> None:
     import uvicorn
 
     settings = Settings()
     telemetry.setup_logging(COMPONENT)
+    # /metrics on the management port (MANAGEMENT_PORT, 8081), apart from the API, as in the Java
+    # templates: the mesh lets the data plane's metrics collector reach that port only.
+    management.serve(metrics_body, host="0.0.0.0")  # noqa: S104  NOSONAR: inside the container; the collector scrapes it from another pod
     uvicorn.run(create_app(settings), host="0.0.0.0", port=settings.port, log_config=None)  # noqa: S104

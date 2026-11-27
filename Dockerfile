@@ -22,6 +22,6 @@ COPY integration.yaml ./
 COPY contracts contracts
 ENV PATH=/app/.venv/bin:$PATH PYTHONUNBUFFERED=1
 USER 10001
-EXPOSE 8080
+EXPOSE 8080 8081
 HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/healthz')"
 CMD ["integration"]
