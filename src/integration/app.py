@@ -248,5 +248,5 @@ def main() -> None:
     app = create_app(settings)
     # /metrics on the management port (MANAGEMENT_PORT, 8081), apart from the API, as in the Java
     # templates: the mesh lets the data plane's metrics collector reach that port only.
-    management.serve(metrics_body)
+    management.serve(metrics_body, host="0.0.0.0")  # noqa: S104  NOSONAR: inside the container; the collector scrapes it from another pod
     uvicorn.run(app, host="0.0.0.0", port=settings.port, log_config=None)  # noqa: S104
