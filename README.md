@@ -57,6 +57,13 @@ against their contract before they're published; events you read are checked bef
 | Audit | `integration.received` (per webhook delivery, or per pulled page with the record keys) and `integration.sent`, ids only; required for PHI and payments |
 | Observability | OpenTelemetry traces (the webhook's trace continues through Kafka to the vendor call), JSON logs, Sentry with scrubbing, `/metrics` with dataset counts, product events and flag cohorts |
 
+## Ports
+
+The API is on 8080, with `/healthz` and `/readyz` for Kubernetes' probes. `/metrics` is on the
+management port, `MANAGEMENT_PORT` (8081), as Spring's actuator is in the Java templates. The
+platform's metrics collector scrapes it there, and the product's mesh lets the collector reach that
+port and no other. The API port serves no metrics.
+
 ## Running
 
 ```sh

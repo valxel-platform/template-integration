@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from integration import app as appmod
-from integration.app import Runtime, build, create_app
+from integration.app import Runtime, build, create_app, metrics_body
 from integration.settings import Settings
 from integration.webhooks import sign
 
@@ -64,7 +64,8 @@ def test_only_declared_routes_exist_and_no_api_docs(client):
     assert client.get("/docs").status_code == 404 and client.get("/openapi.json").status_code == 404
     assert client.get("/webhooks/lab-results").status_code == 405
     assert client.post("/webhooks/other").status_code == 404
-    assert "valxel_events" in client.get("/metrics").text
+    assert client.get("/metrics").status_code == 404  # on the management port (8081)
+    assert "valxel_events" in metrics_body()[0].decode()
     assert client.post("/webhooks/lab-results", content=b"{}").headers["traceresponse"].startswith("00-")
 
 
