@@ -20,7 +20,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, generate_latest
 
-from . import cohorts, errors, events, flags, management, telemetry
+from . import cohorts, errors, events, flags, http_metrics, management, telemetry
 from . import mapping as _mapping  # noqa: F401 - registers the handlers
 from .audit import Auditor, make_sink, require_encryption
 from .component import COMPONENT
@@ -222,6 +222,8 @@ def create_app(
             return JSONResponse({"status": "not ready", "stopped": dead}, status_code=503)
         return JSONResponse({"status": "ready"})
 
+    # Requests, errors and latency per route, on the management port (http_metrics.py).
+    app.add_middleware(http_metrics.HttpMetrics)
     app.add_middleware(cohorts.CohortMiddleware)
     app.add_middleware(errors.TraceResponseMiddleware)
     app.state.runtime = rt
